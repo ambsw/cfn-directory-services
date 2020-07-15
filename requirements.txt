@@ -1,1 +1,2 @@
-cfn_resource_provider>=0.8.6
+boto3>=1.9.16
+git+https://github.com/ambsw/cfn-resource-provider@async-reinvoke#egg=cfn-resource-provider

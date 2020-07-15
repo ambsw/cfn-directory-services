@@ -5,12 +5,59 @@ Parameters:
     Type: String
     Default: cfn-custom-provider-template
 Resources:
-  Custom:
-    Type: Custom::Custom
+  Vpc:
+    Type: 'AWS::EC2::VPC'
     Properties:
-      Value: bye bye World!
+      CidrBlock: '10.10.10.0/24'
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+  SubnetA:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      AvailabilityZone: !Select [0, !GetAZs '']
+      CidrBlock: '10.10.10.0/25'
+      VpcId: !Ref Vpc
+  SubnetB:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      AvailabilityZone: !Select [1, !GetAZs '']
+      CidrBlock: '10.10.10.128/25'
+      VpcId: !Ref Vpc
+  SimpleDirectory:
+    Type: 'AWS::DirectoryService::SimpleAD'
+    Properties:
+      Name: 'cfn-custom-test.example.com'
+      Password: 'an0ddP@ssword'
+      Size: 'Small'
+      VpcSettings:
+        SubnetIds: [!Ref SubnetA, !Ref SubnetB]
+        VpcId: !Ref Vpc
+  #DefaultWorkspaceRole:
+  #  Type: AWS::IAM::Role
+  #  Properties:
+  #    AssumeRolePolicyDocument:
+  #      Version: 2012-10-17
+  #      Statement:
+  #        - Effect: Allow
+  #          Principal:
+  #            Service:
+  #            - 'workspaces.amazonaws.com'
+  #          Action:
+  #            - 'sts:AssumeRole'
+  #    RoleName: 'workspaces_DefaultRole'
+  DirectoryRegistration:
+    #DependsOn: DefaultWorkspaceRole
+    Type: 'Custom::WorkspacesDirectoryRegistration'
+    Properties:
+      DirectoryId: !Ref SimpleDirectory
+      SubnetIds: [!Ref SubnetA, !Ref SubnetB]
+      EnableWorkDocs: false
       ServiceToken: !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${FunctionName}'
-Outputs:
-  Value:
-    Description: The value returned by the Custom::Custom resource
-    Value: !GetAtt 'Custom.Value'
+      # test modify_selfservice_permissions
+      RestartWorkspace: 'DISABLED'
+      # test modify_client_properties
+      ReconnectEnabled: 'DISABLED'
+      # test modify_workspace_access_properties
+      DeviceTypeOsx: 'DENY'
+      # test modify_workspace_creation_properties
+      UserEnabledAsLocalAdministrator: 'false'

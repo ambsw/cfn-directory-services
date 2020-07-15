@@ -7,7 +7,7 @@ verify_ssl = true
 pytest = "*"
 
 [packages]
-cfn-resource-provider = ">=0.8.6"
+cfn-resource-provider = {git = "https://github.com/ambsw/cfn-resource-provider", ref = "async-reinvoke"}
 boto3 = ">=1.14.14"
 
 [requires]

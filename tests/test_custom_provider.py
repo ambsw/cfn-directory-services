@@ -6,7 +6,7 @@ def test_create():
 
     # create
     value = 'v%s' % uuid.uuid4()
-    request = Request('Create', value)
+    request = Request('Create', value, resource_type='Custom::WorkspacesDirectoryRegistration')
     response = handler(request, {})
     assert response['Status'] == 'SUCCESS', response['Reason']
     assert 'PhysicalResourceId' in response
@@ -23,7 +23,7 @@ def test_update():
 
     # create
     value = 'v%s' % uuid.uuid4()
-    request = Request('Create', value)
+    request = Request('Create', value, resource_type='Custom::WorkspacesDirectoryRegistration')
     response = handler(request, {})
 
     assert response['Status'] == 'SUCCESS', response['Reason']
@@ -34,7 +34,7 @@ def test_update():
     # update to a new value
     new_value = 'new-%s' % value
     physical_resource_id = response['PhysicalResourceId']
-    request = Request('Update', new_value, physical_resource_id)
+    request = Request('Update', new_value, physical_resource_id, resource_type='Custom::WorkspacesDirectoryRegistration')
     response = handler(request, {})
 
     assert response['Status'] == 'SUCCESS', response['Reason']
@@ -50,14 +50,14 @@ def test_update():
 
 class Request(dict):
 
-    def __init__(self, request_type, value, physical_resource_id=None):
+    def __init__(self, request_type, value, physical_resource_id=None, resource_type='Custom::Custom'):
         request_id = 'request-%s' % uuid.uuid4()
         self.update({
             'RequestType': request_type,
             'ResponseURL': 'https://httpbin.org/put',
             'StackId': 'arn:aws:cloudformation:us-west-2:EXAMPLE/stack-name/guid',
             'RequestId': request_id,
-            'ResourceType': 'Custom::Custom',
+            'ResourceType': resource_type,
             'LogicalResourceId': 'MyCustom',
             'ResourceProperties': {
                 'Value': value

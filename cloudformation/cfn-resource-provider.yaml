@@ -43,17 +43,87 @@ Resources:
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
-              # Permissions Required by Custom Resource
+              # for register workspace see https://forums.aws.amazon.com/thread.jspa?messageID=949085#949085
               - Effect: Allow
                 Action:
-                  - ssm:GetParameter
-                Resource:
-                  - '*'
+                  - ds:DescribeDirectories
+                  - ds:AuthorizeApplication
+                  - ds:UnauthorizeApplication
+                Resource: '*'
               - Effect: Allow
                 Action:
-                  - kms:Encrypt
-                Resource:
-                  - '*'
+                  # Workspaces
+                  #- workspaces:AssociateIpGroups
+                  #- workspaces:AuthorizeIpRules
+                  #- workspaces:CopyWorkspaceImage
+                  #- workspaces:CreateIpGroup
+                  #- workspaces:CreateTags
+                  #- workspaces:CreateWorkspaces
+                  #- workspaces:DeleteIpGroup
+                  #- workspaces:DeleteTags
+                  #- workspaces:DeleteWorkspaceImage
+                  - workspaces:DeregisterWorkspaceDirectory
+                  #- workspaces:DescribeAccount
+                  #- workspaces:DescribeAccountModifications
+                  #- workspaces:DescribeClientProperties
+                  #- workspaces:DescribeIpGroups
+                  #- workspaces:DescribeTags
+                  - workspaces:DescribeWorkspaceDirectories
+                  #- workspaces:DisassociateIpGroups
+                  #- workspaces:ImportWorkspaceImage
+                  #- workspaces:ListAvailableManagementCidrRanges
+                  #- workspaces:MigrateWorkspace
+                  #- workspaces:ModifyAccount
+                  - workspaces:ModifyClientProperties
+                  - workspaces:ModifySelfservicePermissions
+                  - workspaces:ModifyWorkspaceAccessProperties
+                  - workspaces:ModifyWorkspaceCreationProperties
+                  #- workspaces:ModifyWorkspaceProperties
+                  #- workspaces:ModifyWorkspaceState
+                  #- workspaces:RebootWorkspaces
+                  #- workspaces:RebuildWorkspaces
+                  - workspaces:RegisterWorkspaceDirectory
+                  #- workspaces:RestoreWorkspace
+                  #- workspaces:RevokeIpRules
+                  #- workspaces:StartWorkspaces
+                  #- workspaces:StopWorkspaces
+                  #- workspaces:TerminateWorkspaces
+                  #- workspaces:UpdateRulesOfIpGroup
+                Resource: !Sub 'arn:aws:workspaces:${AWS::Region}:${AWS::AccountId}:*/*'
+              - Effect: Allow
+                Action:
+                  - ec2:CreateTags
+                  - ec2:DeleteTags
+                  - ec2:DescribeVpcs
+                  - ec2:DescribeInternetGateways
+                  - ec2:DescribeSubnets
+                  - ec2:DescribeRouteTables
+                  - ec2:AuthorizeSecurityGroupEgress
+                  - ec2:AuthorizeSecurityGroupIngress
+                  - ec2:CreateSecurityGroup
+                  - ec2:DeleteSecurityGroup
+                  - ec2:DescribeSecurityGroups
+                  - ec2:RevokeSecurityGroupEgress
+                  - ec2:RevokeSecurityGroupIngress
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - iam:GetRole
+                  - iam:GetRoleProperty
+                Resource: !Sub 'arn:aws:iam::${AWS::AccountId}:role/workspaces_DefaultRole*'
+              # User Management
+              - Effect: Allow
+                Action:
+                  - workdocs:ActivateUser
+                  - workdocs:AddUserToGroup
+                  - workdocs:CreateUser
+                  - workdocs:DeactivateUser
+                  - workdocs:DeleteUser
+                  - workdocs:DescribeAvailableDirectories
+                  - workdocs:DescribeUsers
+                  - workdocs:GetCurrentUser
+                  - workdocs:RegisterDirectory
+                Resource: '*'
   CFNCustomProvider:
     Type: AWS::Lambda::Function
     Properties:
