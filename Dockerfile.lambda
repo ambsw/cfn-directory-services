@@ -1,0 +1,14 @@
+FROM python:3.7
+RUN apt-get update && apt-get install -y zip
+WORKDIR /cfn-provider
+
+ADD requirements.txt .
+ADD src ./src
+ADD build.sh .
+
+ARG ZIPFILE=lambda.zip
+RUN chmod +x build.sh && ./build.sh
+
+FROM scratch
+ARG ZIPFILE=lambda.zip
+COPY --from=0 /cfn-provider/${ZIPFILE} /

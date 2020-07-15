@@ -1,0 +1,111 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Custom CloudFormation Provider
+Parameters:
+  AppVPC:
+    Type: String
+    Default: ''
+  PrivateSubnets:
+    Type: CommaDelimitedList
+    Default: ''
+  DefaultSecurityGroup:
+    Type: String
+    Default: ''
+  S3BucketPrefix:
+    Type: String
+    Default: ''
+  FunctionName:
+    Type: String
+    Default: cfn-custom-provider-template
+  CFNCustomProviderZipFileName:
+    Type: String
+    Default: lambdas/cfn-custom-provider-template-latest.zip
+Conditions:
+  DoNotAttachToVpc: !Equals
+    - !Ref 'AppVPC'
+    - ''
+Resources:
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Action:
+              - sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+      Policies:
+        - PolicyName: !Sub "lambda-${FunctionName}-execution"
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # Permissions Required by Custom Resource
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                Resource:
+                  - '*'
+              - Effect: Allow
+                Action:
+                  - kms:Encrypt
+                Resource:
+                  - '*'
+  CFNCustomProvider:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: Custom CloudFormation Provider implementation
+      Code:
+        S3Bucket: !Sub '${S3BucketPrefix}-${AWS::Region}'
+        S3Key: !Ref 'CFNCustomProviderZipFileName'
+      FunctionName: !Ref 'FunctionName'
+      Handler: provider.handler
+      Timeout: 900
+      MemorySize: 128
+      Role: !GetAtt 'LambdaRole.Arn'
+      VpcConfig: !If
+        - DoNotAttachToVpc
+        - !Ref 'AWS::NoValue'
+        - SecurityGroupIds:
+            - !Ref 'DefaultSecurityGroup'
+          SubnetIds: !Ref 'PrivateSubnets'
+      Runtime: python3.7
+  # Logging group and permissions
+  CFNCustomProviderLogGroup:
+    Type: AWS::Logs::LogGroup
+    DependsOn:
+      - CFNCustomProvider
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${CFNCustomProvider}
+      RetentionInDays: 7
+  LambdaLoggingPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      Roles:
+        - !Ref 'LambdaRole'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+            Resource: !GetAtt 'CFNCustomProviderLogGroup.Arn'
+      PolicyName: !Sub "lambda-${FunctionName}-logging"
+  # Required for asynchronous re-invoke
+  LambdaReinvokePolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      Roles:
+        - !Ref 'LambdaRole'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - lambda:InvokeFunction
+            Resource: !GetAtt 'CFNCustomProvider.Arn'
+      PolicyName: !Sub "lambda-${FunctionName}-invoke"
