@@ -191,6 +191,61 @@ class WorkspacesDirectoryRegistrationProvider(ResourceProvider):
             return None
         return directories[0]
 
+    def update_attributes(self):
+        # modify_selfservice_permissions
+        arguments = self.make_arguments({
+            'RestartWorkspace',
+            'IncreaseVolumeSize',
+            'ChangeComputeType',
+            'SwitchRunningMode',
+            'RebuildWorkspace',
+        })
+        if arguments:
+            self.workspaces.modify_selfservice_permissions(
+                ResourceId=self.directory_id,
+                SelfservicePermissions=arguments,
+            )
+        # modify_client_properties
+        arguments = self.make_arguments(
+            "ReconnectEnabled",
+        )
+        if arguments:
+            arguments = {
+                'ResourceId': self.directory_id,
+                '': arguments,
+            }
+            self.workspaces.modify_client_properties(
+                ResourceId=self.directory_id,
+                ClientProperties=arguments,
+            )
+        # modify_workspace_access_properties
+        arguments = self.make_arguments({
+            "DeviceTypeOsx",
+            "DeviceTypeWeb",
+            "DeviceTypeIos",
+            "DeviceTypeAndroid",
+            "DeviceTypeChromeOs",
+            "DeviceTypeZeroClient",
+        })
+        if arguments:
+            self.workspaces.modify_workspace_access_properties(
+                ResourceId=self.directory_id,
+                WorkspaceAccessProperties=arguments,
+            )
+        # modify_workspace_creation_properties
+        arguments = self.make_arguments({
+            "EnableInternetAccess",
+            "DefaultOu",
+            "CustomSecurityGroupId",
+            "UserEnabledAsLocalAdministrator",
+            "EnableMaintenanceMode",
+        })
+        if arguments:
+            self.workspaces.modify_workspace_creation_properties(
+                ResourceId=self.directory_id,
+                WorkspaceCreationProperties=arguments,
+            )
+
     # CloudFormation Handlers
     def create(self):
         # must defer this since region is in the payload
@@ -206,100 +261,41 @@ class WorkspacesDirectoryRegistrationProvider(ResourceProvider):
                 "Tags",
             })
             self.workspaces.register_workspace_directory(**arguments)
-            # modify_selfservice_permissions
-            arguments = self.make_arguments({
-                'RestartWorkspace',
-                'IncreaseVolumeSize',
-                'ChangeComputeType',
-                'SwitchRunningMode',
-                'RebuildWorkspace',
-            })
-            if arguments:
-                self.workspaces.modify_selfservice_permissions(
-                    ResourceId=self.directory_id,
-                    SelfservicePermissions=arguments,
-                )
-            # modify_client_properties
-            arguments = self.make_arguments(
-                "ReconnectEnabled",
-            )
-            if arguments:
-                arguments = {
-                    'ResourceId': self.directory_id,
-                    '': arguments,
-                }
-                self.workspaces.modify_client_properties(
-                    ResourceId=self.directory_id,
-                    ClientProperties=arguments,
-                )
-            # modify_workspace_access_properties
-            arguments = self.make_arguments({
-                "DeviceTypeOsx",
-                "DeviceTypeWeb",
-                "DeviceTypeIos",
-                "DeviceTypeAndroid",
-                "DeviceTypeChromeOs",
-                "DeviceTypeZeroClient",
-            })
-            if arguments:
-                self.workspaces.modify_workspace_access_properties(
-                    ResourceId=self.directory_id,
-                    WorkspaceAccessProperties=arguments,
-                )
-            # modify_workspace_creation_properties
-            arguments = self.make_arguments({
-                "EnableInternetAccess",
-                "DefaultOu",
-                "CustomSecurityGroupId",
-                "UserEnabledAsLocalAdministrator",
-                "EnableMaintenanceMode",
-            })
-            if arguments:
-                self.workspaces.modify_workspace_creation_properties(
-                    ResourceId=self.directory_id,
-                    WorkspaceCreationProperties=arguments,
-                )
-        except ClientError as error:
+            self.update_attributes()
+            self.success("Directory Registered")
+        except ClientError:
             self.physical_resource_id = "failed-to-create"
-            self.fail(f"({error.__class__}) {error}")
+            raise
 
     def update(self):
         # must defer this since region is in the payload
         self.workspaces = boto3.client("workspaces", region_name=self.region)
+
         new_keys = set(self.properties.keys())
         old_keys = (
             set(self.old_properties.keys())
             if "OldResourceProperties" in self.request
             else new_keys
         )
-
+        # added/removed keys
         changed_properties = new_keys.symmetric_difference(old_keys)
-
+        # updated keys
         for name in new_keys.union(old_keys).difference({"ServiceToken"}):
             if self.get(name, None) != self.get_old(name, self.get(name)):
                 changed_properties.add(name)
 
-        try:
-            if changed_properties.intersection({'DirectoryId', 'SubnetIds', 'Tenancy'}):
+        if changed_properties.intersection({'DirectoryId', 'SubnetIds', 'Tenancy', 'EnableWorkDocs',
+                                            'EnableSelfService', 'Tags'}):
+            if changed_properties.intersection({'DirectoryId'}):
+                self.create()
+                self.success("Directory Registration Recreated")
+            else:
                 # NEVER delete in update; create a new resource and return a different physical ID
                 # CF will call the delete on the old resource when the stack update succeeds
                 # see https://aws.amazon.com/premiumsupport/knowledge-center/best-practices-custom-cf-lambda/
-                return self.create()
-            elif changed_properties.intersection({'EnableWorkDocs', 'EnableSelfService', 'Tenancy', 'Tags'}):
-                # not supported
-                self.fail(
-                    'The following parameters may not be changed except in combination with "DirectoryId" or ' +
-                    '"SubnetIds" since changing these keys triggers a full replacement: '.format(
-                        ", ".join(changed_properties.intersection({'EmailAddress', 'Password'}))
-                    )
-                )
-            else:
-                self.success("nothing to change")
-
-            self.workspaces.modify_selfservice_permissions(**arguments)
-
-        except ClientError as error:
-            self.fail("{}".format(error))
+                raise NotImplementedError("Complex replacement not implemented and required by: " +
+                                          f"{changed_properties.intersection({'SubnetIds', 'Tenancy'})}")
+        self.update_attributes()
 
     def delete(self):
         if self.physical_resource_id in ['failed-to-create', 'deleted']:
