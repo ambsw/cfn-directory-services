@@ -32,6 +32,7 @@ request_schema = {
         },
         "Tenancy": {
             "type": "string",
+            "enum": ['DEDICATED', 'SHARED'],
             "description": "Indicates whether your WorkSpace directory is dedicated or shared.",
         },
         "Tags": {

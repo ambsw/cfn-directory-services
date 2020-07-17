@@ -1,5 +1,5 @@
 FROM python:3.7
-ARG PACKAGE=cfn-custom-provider-template
+ARG PACKAGE=cfn-workspace-provider
 WORKDIR /${PACKAGE}
 
 RUN apt-get update && apt-get install -y jq && apt-get install -y zip

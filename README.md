@@ -1,15 +1,16 @@
 # cfn-directory-services
 A set of Custom CloudFormation resources to automate Directory Services and WorkSpace provisioning.
 
-***WARNING:  Due to limitations in the official AWS API, thse resources are NOT fully reversible.  When deleting these 
+***WARNING:  Due to limitations in the official AWS API, these resources are NOT fully reversible.  When deleting these 
 resources, the WorkDocs site must be manually removed AFTER users are deleted but BEFORE the Directory Service can be 
-removed.  As a result, Users SHOULD NOT be created in the same stack as the Directory Service***
+removed.  As a result, Users SHOULD NOT be created in the same stack as the Directory Service (even though this will
+not result in a `create`-time error).***
 
 ##Deploying
 
 This package includes helper files for deployment in `/cloudformation`.  If you have Docker, the recommended procedure is:
 
-     docker build --build-arg PACKAGE=cfn-workspace-provider -t cfn-workspace-provider -f Dockerfile.build .
+     docker build -t cfn-workspace-provider -f Dockerfile.build .
      docker run -it cfn-workspace-provider bash
      
      (in the container)
@@ -23,10 +24,14 @@ This package includes helper files for deployment in `/cloudformation`.  If you 
      make -f Makefile.local deploy 
      make -f Makefile.local deploy-provider 
 
-If you do not have docker, the make files may be run locally after installing `jq` and `zip` and pip-installing `pipenv` 
-and `awscli`.
+If you do not have docker, the make files may be run locally on Debian/Ubuntu (and possibly others) after installing 
+`jq` and `zip` and pip-installing `pipenv` and `awscli`.
 
-##Custom::WorkspacesDirectoryRegistration
+## Usage
+
+A demo stack demonstrating usage can be found in `/cloudformation` and deployed using `make  -f Makefile.local demo`.
+
+###Custom::WorkspacesDirectoryRegistration
 
 This resource will register a Directory Service with WorkSpaces.  Due to the way API calls are partitioned, it accepts
 valid combinations of the arguments from 
@@ -42,13 +47,35 @@ enable individual self-service permissions.
       Type: 'Custom::WorkspacesDirectoryRegistration'
       Properties:
         ServiceToken: !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${FunctionName}'
+        # Register Workspace Directory
         DirectoryId: !Ref SimpleDirectory
         SubnetIds: [!Ref SubnetA, !Ref SubnetB]
-        EnableWorkDocs: true
-        RestartWorkspace: 'DISABLED'
-        ReconnectEnabled: 'DISABLED'
-        DeviceTypeOsx: 'DENY'
-        UserEnabledAsLocalAdministrator: 'false'
+        EnableWorkDocs: <boolean>  # default=True
+        EnableSelfService: <boolean>
+        Tenancy: DEDICATED | SHARED
+        Tags: <array<object>>
+        # Client Properties
+        ReconnectEnabled: ENABLED | DISABLED
+        # Workspace Access Properties
+        DeviceTypeWindows: ALLOW | DENY
+        DeviceTypeOsx: ALLOW | DENY
+        DeviceTypeWeb: ALLOW | DENY
+        DeviceTypeIos: ALLOW | DENY
+        DeviceTypeAndroid: ALLOW | DENY
+        DeviceTypeChromeOs: ALLOW | DENY
+        DeviceTypeZeroClient: ALLOW | DENY
+        # Workspace Creation Properties
+        EnableInternetAccess: <boolean>
+        DefaultOu: <string>
+        CustomSecurityGroupId: <string>
+        UserEnabledAsLocalAdministrator: <boolean>
+        EnableMaintenanceMode: <boolean>
+        # Self-Service Permissions (to enable, EnableSelfService must be true)
+        RestartWorkspace: ENABLED | DISABLED 
+        IncreaseVolumeSize: ENABLED | DISABLED
+        ChangeComputeType: ENABLED | DISABLED
+        SwitchRunningMode: ENABLED | DISABLED
+        RebuildWorkspace: ENABLED | DISABLED
 
 **NOTE: As documented in the API, an `AWs::IAM::Role` called`workspaces_DefaultRole` must exist prior to creating this
 resource.**
@@ -56,7 +83,7 @@ resource.**
 Since the Register call is asynchronous, this resource will retry for approximately 12 minutes (of the 15 minute Lambda 
 timeout) and then re-invoke itself to continue to wait.  Normally registration happens in the first 30 second so this is not required.
 
-##Custom::DirectoryUser
+###Custom::DirectoryUser
 
 This resource hijacks the WorkDocs API to create Directory Service users that are available for WorkSpaces.  By default,
 the resource deactivates the WorkDocs features (this is a *workspaces* provider after all), but this behavior can be
@@ -85,3 +112,9 @@ options have not worked in testing (e.g. setting `Type` to `WORKSPACEUSER`).
         Locale: 'en' | 'fr' | 'ko' | 'de' | 'es' | 'ja' | 'ru' | 'zh_CN' | 'zh_TW' | 'pt_BR' | 'default'
         GrantPoweruserPrivileges: <boolean>
         EnableWorkDocs: <boolean>
+
+## Tests
+
+Test cases are not yet implemented (see `test/`).  If you implement them, they can be run using:
+
+    make -f Makefile.local test

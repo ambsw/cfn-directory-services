@@ -15,9 +15,17 @@ def handler(request, context):
     elif request["ResourceType"] == "Custom::DirectoryUser":
         return directory_user_provider.handler(request, context)
     else:
-        # try to respond to CF request
+        # try to provide reasonable responses to CF request if Resource Type is not supported
         provider = ResourceProvider()
         provider.set_request(request, context)
-        provider.fail(f'no provider found for resource: {request["ResourceType"]}')
+        if provider.request_type == 'Delete' and provider.physical_resource_id in ['create-not-found', 'deleted']:
+            provider.success(f'Clean rollback when provider is not found on create.')
+            provider.physical_resource_id = 'deleted'
+        elif provider.request_type == 'Create':
+            provider.fail(f'Provider not found on create: {request["ResourceType"]}')
+            # used to indicate a clean rollback (i.e. no resources needing deleted)
+            provider.physical_resource_id = 'create-not-found'
+        else:
+            provider.fail(f'Provider not found for resource: {request["ResourceType"]}')
         provider.send_response()
-        raise ValueError(f'No handler found for resource: {request["ResourceType"]}')
+        raise KeyError(f'No handler found for resource: {request["ResourceType"]}')
