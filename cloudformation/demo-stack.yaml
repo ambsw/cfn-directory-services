@@ -32,30 +32,27 @@ Resources:
       VpcSettings:
         SubnetIds: [!Ref SubnetA, !Ref SubnetB]
         VpcId: !Ref Vpc
-  # ensure test don't collide with the workspaces_DefaultRole if it exists
-  TestWorkspaceRole:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: 2012-10-17
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service:
-              - 'workspaces.amazonaws.com'
-            Action:
-              - 'sts:AssumeRole'
-      RoleName: 'workspaces_TestRole'
+  #DefaultWorkspaceRole:
+  #  Type: AWS::IAM::Role
+  #  Properties:
+  #    AssumeRolePolicyDocument:
+  #      Version: 2012-10-17
+  #      Statement:
+  #        - Effect: Allow
+  #          Principal:
+  #            Service:
+  #            - 'workspaces.amazonaws.com'
+  #          Action:
+  #            - 'sts:AssumeRole'
+  #    RoleName: 'workspaces_DefaultRole'
   DirectoryRegistration:
-    #DependsOn: DefaultWorkspaceRole
     Type: 'Custom::WorkspacesDirectoryRegistration'
     Properties:
+      ServiceToken: !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${FunctionName}'
       DirectoryId: !Ref SimpleDirectory
       SubnetIds: [!Ref SubnetA, !Ref SubnetB]
-      # ensure test don't collide with the workspaces_DefaultRole if it exists
-      CustomSecurityGroupId: !Ref TestWorkspaceRole
-      EnableWorkDocs: false
-      ServiceToken: !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${FunctionName}'
+      # required to automate user creation
+      EnableWorkDocs: true
       # test modify_selfservice_permissions
       RestartWorkspace: 'DISABLED'
       # test modify_client_properties
@@ -65,8 +62,10 @@ Resources:
       # test modify_workspace_creation_properties
       UserEnabledAsLocalAdministrator: 'false'
   TestUser:
+    DependsOn: DirectoryRegistration
     Type: 'Custom::DirectoryUser'
     Properties:
+      ServiceToken: !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${FunctionName}'
       OrganizationId: !Ref SimpleDirectory
       Username: CfnWorkspaceTestUser
       Password: ShouldB3Opt!onal

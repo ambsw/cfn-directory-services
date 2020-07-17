@@ -111,7 +111,7 @@ Resources:
                   - iam:GetRole
                   - iam:GetRoleProperty
                 Resource: !Sub 'arn:aws:iam::${AWS::AccountId}:role/workspaces_DefaultRole*'
-              # User Management
+              # User Management (via Workdocs)
               - Effect: Allow
                 Action:
                   - workdocs:ActivateUser
@@ -120,9 +120,12 @@ Resources:
                   - workdocs:DeactivateUser
                   - workdocs:DeleteUser
                   - workdocs:DescribeAvailableDirectories
+                  - workdocs:DescribeGroups
                   - workdocs:DescribeUsers
                   - workdocs:GetCurrentUser
                   - workdocs:RegisterDirectory
+                  - workdocs:UpdateUser
+                  - workdocs:UpdateUserAdministrativeSettings
                 Resource: '*'
   CFNCustomProvider:
     Type: AWS::Lambda::Function

@@ -5,7 +5,6 @@ from botocore.exceptions import ClientError
 from cfn_resource_provider import ResourceProvider
 
 log = logging.getLogger()
-#log.setLevel('INFO')
 
 
 request_schema = {
@@ -23,6 +22,8 @@ request_schema = {
         },
         "EnableWorkDocs": {
             "type": "boolean",
+            # REQUIRED to administer users through the WorkDocs API
+            "default": True,
             "description": "Indicates whether Amazon WorkDocs is enabled or disabled.",
         },
         "EnableSelfService": {
@@ -191,55 +192,52 @@ class WorkspacesDirectoryRegistrationProvider(ResourceProvider):
             return None
         return directories[0]
 
-    def update_attributes(self):
-        # modify_selfservice_permissions
-        arguments = self.make_arguments({
+    def update_attributes(self, changed_properties=None):
+        if changed_properties is None:
+            changed_properties = set(self.properties.keys())
+        arguments = self.make_arguments(changed_properties.intersection({
             'RestartWorkspace',
             'IncreaseVolumeSize',
             'ChangeComputeType',
             'SwitchRunningMode',
             'RebuildWorkspace',
-        })
+        }))
         if arguments:
             self.workspaces.modify_selfservice_permissions(
                 ResourceId=self.directory_id,
                 SelfservicePermissions=arguments,
             )
         # modify_client_properties
-        arguments = self.make_arguments(
+        arguments = self.make_arguments(changed_properties.intersection({
             "ReconnectEnabled",
-        )
+        }))
         if arguments:
-            arguments = {
-                'ResourceId': self.directory_id,
-                '': arguments,
-            }
             self.workspaces.modify_client_properties(
                 ResourceId=self.directory_id,
                 ClientProperties=arguments,
             )
         # modify_workspace_access_properties
-        arguments = self.make_arguments({
+        arguments = self.make_arguments(changed_properties.intersection({
             "DeviceTypeOsx",
             "DeviceTypeWeb",
             "DeviceTypeIos",
             "DeviceTypeAndroid",
             "DeviceTypeChromeOs",
             "DeviceTypeZeroClient",
-        })
+        }))
         if arguments:
             self.workspaces.modify_workspace_access_properties(
                 ResourceId=self.directory_id,
                 WorkspaceAccessProperties=arguments,
             )
         # modify_workspace_creation_properties
-        arguments = self.make_arguments({
+        arguments = self.make_arguments(changed_properties.intersection({
             "EnableInternetAccess",
             "DefaultOu",
             "CustomSecurityGroupId",
             "UserEnabledAsLocalAdministrator",
             "EnableMaintenanceMode",
-        })
+        }))
         if arguments:
             self.workspaces.modify_workspace_creation_properties(
                 ResourceId=self.directory_id,
@@ -261,11 +259,24 @@ class WorkspacesDirectoryRegistrationProvider(ResourceProvider):
                 "Tags",
             })
             self.workspaces.register_workspace_directory(**arguments)
-            self.update_attributes()
-            self.success("Directory Registered")
+            try:
+                self.update_attributes()
+                self.success("Directory Registered")
+            except ClientError:
+                # try to roll back registration
+                self.workspaces.deregister_workspace_directory(DirectoryId=self.directory_id)
+                raise
         except ClientError:
-            self.physical_resource_id = "failed-to-create"
+            directory = self.describe_workspace_directory()
+            if directory is None:
+                self.physical_resource_id = "failed-to-create"
+            elif 'RegistrationCode' in directory:
+                self.physical_resource_id = directory['RegistrationCode']
+            else:
+                self.physical_resource_id = "failed-after-create"
             raise
+
+    KEYS_COMPLEX_REPLACMENT = {'DirectoryId', 'SubnetIds', 'Tenancy', 'EnableWorkDocs', 'EnableSelfService', 'Tags'}
 
     def update(self):
         # must defer this since region is in the payload
@@ -284,8 +295,7 @@ class WorkspacesDirectoryRegistrationProvider(ResourceProvider):
             if self.get(name, None) != self.get_old(name, self.get(name)):
                 changed_properties.add(name)
 
-        if changed_properties.intersection({'DirectoryId', 'SubnetIds', 'Tenancy', 'EnableWorkDocs',
-                                            'EnableSelfService', 'Tags'}):
+        if changed_properties.intersection(self.KEYS_COMPLEX_REPLACMENT):
             if changed_properties.intersection({'DirectoryId'}):
                 self.create()
                 self.success("Directory Registration Recreated")
@@ -293,9 +303,10 @@ class WorkspacesDirectoryRegistrationProvider(ResourceProvider):
                 # NEVER delete in update; create a new resource and return a different physical ID
                 # CF will call the delete on the old resource when the stack update succeeds
                 # see https://aws.amazon.com/premiumsupport/knowledge-center/best-practices-custom-cf-lambda/
+                # TODO: figure out
                 raise NotImplementedError("Complex replacement not implemented and required by: " +
-                                          f"{changed_properties.intersection({'SubnetIds', 'Tenancy'})}")
-        self.update_attributes()
+                                          f"{changed_properties.intersection(self.KEYS_COMPLEX_REPLACMENT)}")
+        self.update_attributes(changed_properties)
 
     def delete(self):
         if self.physical_resource_id in ['failed-to-create', 'deleted']:
@@ -322,10 +333,11 @@ class WorkspacesDirectoryRegistrationProvider(ResourceProvider):
     def set_response_data(self, directory):
         self.physical_resource_id = directory['RegistrationCode']
         self.set_attribute('RegistrationCode', directory['RegistrationCode'])
-        self.set_attribute('CustomerUserName ', directory['CustomerUserName'])
+        self.set_attribute('CustomerUserName', directory['CustomerUserName'])
         # workspace role and security group
         self.set_attribute('IamRoleId', directory['IamRoleId'])
         self.set_attribute('WorkspaceSecurityGroupId', directory['WorkspaceSecurityGroupId'])
+        log.info(f'response data: {self.response}')
 
     def is_ready(self):
         log.info(f'check running for action {self.request_type}')

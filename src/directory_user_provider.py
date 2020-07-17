@@ -1,7 +1,12 @@
+import logging
+
 import boto3
 from botocore.exceptions import ClientError
 
 from cfn_resource_provider import ResourceProvider
+
+log = logging.getLogger()
+
 
 #
 # The request schema defining the Resource Properties
@@ -63,10 +68,17 @@ request_schema = {
             "type": "boolean",
             "description": "Boolean value to determine whether the user is granted Poweruser privileges.",
         },
+        # TO SUPPORT WORKSPACES-ONLY
+        "EnableWorkDocs": {
+            "type": "boolean",
+            "default": False,
+            "description": "Boolean value to indicate whether or not the user is active on (and billed for) WorkDocs"
+        }
     },
 }
 
 
+# TODO: Consider https://aws.amazon.com/blogs/desktop-and-application-streaming/automate-provisioning-of-amazon-workspaces-using-aws-lambda/
 class DirectoryUserProvider(ResourceProvider):
     def __init__(self):
         super(ResourceProvider, self).__init__()
@@ -117,7 +129,7 @@ class DirectoryUserProvider(ResourceProvider):
         return arguments
 
     KEYS_CREATE = {
-        "OrganizationId", "Username", "EmailAddress", "GivenName", "Surname", "Password", "TimeZoneId", "StorageRule",
+        "OrganizationId", "Username", "Password", "EmailAddress", "GivenName", "Surname", "TimeZoneId", "StorageRule",
     }
     KEYS_UPDATE = {
         "GivenName", "Surname", "Type", "StorageRule", "TimeZoneId", "Locale", "GrantPoweruserPrivileges",
@@ -131,11 +143,17 @@ class DirectoryUserProvider(ResourceProvider):
             response = workdocs.create_user(**arguments)
             self.physical_resource_id = response["User"]["Id"]
             # some keys are not available for create, but are available for update
-            arguments = self.make_arguments(self.KEYS_UPDATE - self.KEYS_CREATE)
-            if arguments:
-                arguments['UserId'] = self.physical_resource_id
-                workdocs.update_user(**arguments)
-            self.success("User Created")
+            try:
+                arguments = self.make_arguments(self.KEYS_UPDATE - self.KEYS_CREATE)
+                if arguments:
+                    arguments['UserId'] = self.physical_resource_id
+                    workdocs.update_user(**arguments)
+                # ensure we can make users who are not charged for WorkDocs
+                if not self.get('EnableWorkDocs'):
+                    workdocs.deactivate_user(UserId=self.physical_resource_id)
+                self.success("User Created")
+            except ClientError:
+                workdocs.delete_user(UserId=self.physical_resource_id)
         except ClientError:
             self.physical_resource_id = "failed-to-create"
             raise
@@ -165,18 +183,30 @@ class DirectoryUserProvider(ResourceProvider):
             else:
                 # complex replacement (delete + create)
                 # TODO: figure out
-                raise NotImplementedError("Complex replacement behavior required")
-        else:
-            # simple update
-            arguments = self.make_arguments(changed_properties)
-            arguments['UserId'] = self.physical_resource_id
-            workdocs.update_user(**arguments)
-            self.success("User Updated")
+                raise NotImplementedError(f"Complex replacement behavior required: "
+                                          f"{changed_properties.intersection(keys_replacement)}")
+        # ensure we can make users who are not charged for WorkDocs
+        if changed_properties.intersection({'EnableWorkDocs'}):
+            if self.get('EnableWorkDocs'):
+                workdocs.activate_user(UserId=self.physical_resource_id)
+            else:
+                workdocs.deactivate_user(UserId=self.physical_resource_id)
+        # simple update
+        arguments = self.make_arguments(self.KEYS_UPDATE)
+        arguments['UserId'] = self.physical_resource_id
+        workdocs.update_user(**arguments)
+        self.success("User Updated")
 
     def delete(self):
         if self.physical_resource_id in ['failed-to-create', 'deleted']:
             return
         workdocs = boto3.client("workdocs", region_name=self.region)
+        users = workdocs.describe_users(UserIds=self.physical_resource_id)
+        if not users:
+            log.warning(f"Requested user no longer exist: {self.physical_resource_id}")
+            self.success("User no longer exists.  This may be due to a cancellation request.")
+            self.physical_resource_id = 'deleted'
+            return
         workdocs.delete_user(UserId=self.physical_resource_id)
         self.physical_resource_id = 'deleted'
 
