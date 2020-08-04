@@ -19,10 +19,15 @@ Parameters:
   CFNCustomProviderZipFileName:
     Type: String
     Default: lambdas/cfn-custom-provider-template-latest.zip
+  PermissionsBoundary:
+    Description: 'Optional ARN for a policy that will be used as the permission boundary for all roles created by this template.'
+    Type: String
+    Default: ''
 Conditions:
   DoNotAttachToVpc: !Equals
     - !Ref 'AppVPC'
     - ''
+  HasPermissionsBoundary: !Not [!Equals [!Ref PermissionsBoundary, '']]
 Resources:
   LambdaRole:
     Type: AWS::IAM::Role
@@ -38,6 +43,7 @@ Resources:
                 - lambda.amazonaws.com
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+      PermissionsBoundary: !If [HasPermissionsBoundary, !Ref PermissionsBoundary, !Ref 'AWS::NoValue']
       Policies:
         - PolicyName: !Sub "lambda-${FunctionName}-execution"
           PolicyDocument:
